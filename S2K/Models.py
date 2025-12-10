@@ -1,10 +1,10 @@
-##Dictonary with models is define now in one place
+#Dictonary with models is define now in one place
 
 from collections import namedtuple
 import numpy as np
 import scipy.optimize as opt
 
-def pen_scaling_sigmoid(std_cn, k=50, center=0.10428316240586664):
+def pen_scaling_sigmoid(std_cn, k=50, center=0.1043):
     return 1 - (0.5 / (1 + np.exp(-k * (std_cn - center))))
 
 def find_min(d):
@@ -124,8 +124,8 @@ def pick_model(ai, s_ai, cn, s_cn, models):
         d = nll + scaled_model_weights[model]
         # d = nll + model_weights[model]
         results[model] = d
-
-    da = ai/s_ai 
+            
+    da = ai/s_ai
     dc = (cn-2)/s_cn
     dd = 0.5 * (np.sqrt(da**2+dc**2)) ** 2
     
@@ -140,7 +140,18 @@ def pick_model(ai, s_ai, cn, s_cn, models):
         results['k'] = k
         
     return results
+
+def calc_k(ai, s_ai, cn, s_cn, model):
+    assert not np.isnan (ai), "ai is nan"
+    assert not np.isnan (cn), "cn in nan"
     
+    if model == 'AB':
+        k = 0
+    else:
+        _, k = calculate_distance_minim(ai, s_ai, cn, s_cn, model_presets[model])
+        
+    return k    
+
 def calculate_distance_minim (ai, s_ai, cn, s_cn, model):
     
     res = opt.minimize_scalar (dist, bounds = (0,1), args = ((ai, s_ai, cn, s_cn, model)), 

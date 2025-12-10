@@ -3,8 +3,8 @@ import scipy.stats as sts
 import scipy.optimize as opt
 import sklearn.linear_model as slm
 
-from S2K import Consts
-from S2K import Models
+from doCNA import Consts
+from doCNA import Models
 
 
 class Scoring:
@@ -107,9 +107,14 @@ class Scoring:
         
         ai = segment.parameters['ai']
         try:
+            # if segment.chrom == 'chrY':
+            #     base_parameters = {'model' : 'A', 'd_model' : 0.0, 'k': cn, 'p_model' : np.nan, 'AB':np.nan}
+            #     for model in models:
+            #         base_parameters[model] = np.nan
+            #     segment.parameters.update (base_parameters)
+            # else:
             segment.parameters.update (Models.pick_model(ai,s_ai,cn,s_cn,models))
         except (IndexError, AssertionError):
-            self.logger.info(f"Problematic segment encountered: {segment}")
             base_parameters = {'model' : 'UN', 'd_model' : np.nan, 'k': np.nan, 'p_model' : np.nan, 'AB':np.nan}
             for model in models:
                 base_parameters[model] = np.nan
