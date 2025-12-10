@@ -3,8 +3,8 @@ import scipy.stats as sts
 import scipy.optimize as opt
 import sklearn.linear_model as slm
 
-from doCNA import Consts
-from doCNA import Models
+from S2K import Consts
+from S2K import Models
 
 
 class Scoring:
