@@ -163,9 +163,17 @@ class Genome:
             chrom_vaf_results = Testing.VAF_test (self.sex_chromosomes[chrom].data,
                                                      self.HE.medians['cov'])
             self.logger.info (f'VAF test results: {chrom_vaf_results}')
-            self.VAF.results.append(pd.DataFrame.from_records ([chrom_vaf_results],
-                                                                columns = chrom_vaf_results._fields, 
-                                                                index = [chrom]))
+            self.VAF.results = pd.concat(
+                [
+                    self.VAF.results,
+                    pd.DataFrame.from_records(
+                        [chrom_vaf_results],
+                        columns=chrom_vaf_results._fields,
+                        index=[chrom]
+                    )
+                ],
+                axis=0
+            )
         
             self.chromosomes[chrom] = self.sex_chromosomes[chrom]
             self.logger.info(f'Chromosome {chrom} added.')        

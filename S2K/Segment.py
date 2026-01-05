@@ -11,14 +11,15 @@ from S2K.Report import Report
 class Segment:
     """Class to calculate clonality and find the model."""
     def __init__ (self, data, config, logger, genome_medians,
-                  centromere_fraction, cytobands) -> None:
+                  centromere_fraction, cytobands, models) -> None:
         self.data = data
         self.config = config
         self.genome_medians = genome_medians
         #self.model_presets = model_dic
         self.centromere_fraction = centromere_fraction
         self.cytobands = cytobands
-        
+        self.models = models
+
         self.chrom = data['chrom'].values[0]
         self.start = data['position'].min()
         self.end = data['position'].max()

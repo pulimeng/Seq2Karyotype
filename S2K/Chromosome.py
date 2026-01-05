@@ -17,14 +17,15 @@ Run_treshold =  namedtuple('Run_treshold', [Consts.N_SYMBOL, Consts.E_SYMBOL])
 
 class Chromosome:
     """Class to contain data, and find runs."""
-    def __init__ (self, name, data, config, logger, genome_medians, CB):
+    def __init__ (self, name, data, config, logger, genome_medians, CB, models=None):
         self.name = name
         self.data = data
         self.config = config
         self.logger = logger.getChild(f'{self.__class__.__name__}-{self.name}')
         self.genome_medians = genome_medians
-        
         self.CB = CB
+        self.models = models
+
         ##Very ugly
         if name != 'chrY':
             self.cent = (CB.loc[(CB['gieStain'] == 'acen') | (CB['gieStain'] == 'gvar'),'chromStart'].min(),
@@ -175,7 +176,8 @@ class Chromosome:
                                                 logger = self.logger, 
                                                 genome_medians = self.genome_medians,
                                                 centromere_fraction = 0 if (centromere_fraction < 0) | (centromere_fraction > 1) else centromere_fraction,
-                                                cytobands = cytobands_str))
+                                                cytobands = cytobands_str,
+                                                models=self.models,))
                 self.snvs.append(data_view)
         
     def generate_merged_segments (self, merges):
@@ -208,7 +210,8 @@ class Chromosome:
                                                 logger = self.logger, 
                                                 genome_medians = self.genome_medians,
                                                 centromere_fraction = 0 if (centromere_fraction < 0) | (centromere_fraction > 1) else centromere_fraction,
-                                                cytobands = cytobands_str))
+                                                cytobands = cytobands_str,
+                                                models=self.models,))
                 self.merged_snvs.append(data_view)
     
     
