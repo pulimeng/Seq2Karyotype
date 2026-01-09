@@ -11,13 +11,13 @@ from S2K.Report import Report
 class Segment:
     """Class to calculate clonality and find the model."""
     def __init__ (self, data, config, logger, genome_medians,
-                  centromere_fraction, cytobands) -> None:
+                  centromere_fraction, cytobands, models) -> None:
         self.data = data
         self.config = config
         self.genome_medians = genome_medians
-        #self.model_presets = model_dic
         self.centromere_fraction = centromere_fraction
         self.cytobands = cytobands
+        self.models = models
         
         self.chrom = data['chrom'].values[0]
         self.start = data['position'].min()
@@ -29,7 +29,6 @@ class Segment:
         self.symbol = self.symbols.index[0]
         self.logger.debug (f'Segment symbol: {self.symbol}')
         self.estimate_parameters ()
-        #self.select_model ()
         self.logger.debug ('Segment analyzed.')
         
     def tostring(self) -> str:
@@ -39,24 +38,43 @@ class Segment:
         return '\n'.join ([self.name, str(self.parameters)])
     
     def estimate_parameters (self):
-        #sometimes, even if classified, it's wrong model
         method = 'unspecified'
-        if self.symbol == Consts.E_SYMBOL:
-            self.parameters = get_sensitive (self.data.loc[self.data['symbol'] == Consts.E_SYMBOL,],
-                                             self.genome_medians['fb'])
-            method = 'sensitive'
-            if self.parameters['ai'] > Consts.MAX_AI_THRESHOLD_FOR_SENSITIVE:
-                self.parameters = get_full (self.data,#.loc[self.data['symbol'] != 'A',],
+        
+        if len(self.data)/Consts.SNPS_IN_WINDOW < 0.15:
+            self.parameters = get_fallback(self.data, self.genome_medians['fb'])
+            method = 'fallback'
+        else:
+            if self.symbol == Consts.E_SYMBOL:
+                self.parameters = get_sensitive (self.data.loc[self.data['symbol'] == Consts.E_SYMBOL,],
+                                                 self.genome_medians['fb'])
+                method = 'sensitive'
+                if self.parameters['ai'] > Consts.MAX_AI_THRESHOLD_FOR_SENSITIVE:
+                    self.parameters = get_full (self.data,
+                                                b = self.genome_medians['fb'])
+                    method = 'full'
+                
+            else:
+                self.parameters = get_full (self.data,
                                             b = self.genome_medians['fb'])
                 method = 'full'
+        
+        
+        # if self.symbol == Consts.E_SYMBOL:
+        #     self.parameters = get_sensitive (self.data.loc[self.data['symbol'] == Consts.E_SYMBOL,],
+        #                                      self.genome_medians['fb'])
+        #     method = 'sensitive'
+        #     if self.parameters['ai'] > Consts.MAX_AI_THRESHOLD_FOR_SENSITIVE:
+        #         self.parameters = get_full (self.data,
+        #                                     b = self.genome_medians['fb'])
+        #         method = 'full'
             
-        else:
-            self.parameters = get_full (self.data,#.loc[self.data['symbol'] != 'A',],
-                                        b = self.genome_medians['fb'])
-            method = 'full'
+        # else:
+        #     self.parameters = get_full (self.data,
+        #                                 b = self.genome_medians['fb'])
+        #     method = 'full'
             
         if self.parameters['success']:
-            self.logger.debug (f"ai estimated by {method} method, ai = {self.parameters['ai']}")
+            self.logger.debug(f"ai estimated by {method} method, ai = {self.parameters['ai']}, data shape = {self.data.shape}")
         else:
             self.logger.info ("ai not estimated.")
             self.logger.info (f"Parameters: {self.parameters}")
@@ -67,7 +85,6 @@ class Segment:
                         
 
 def get_sensitive (data, fb):
-
     
     vafs = data['vaf'].values
     
@@ -142,6 +159,43 @@ def get_full (data, b = 1.01):
                       'fraction_1' : ones0/c.sum(), 'status' : 'Parameters guessed'}    
         
     return parameters
+
+def get_fallback(data, fb):
+    """
+    Fallback method to estimate parameters when there are very few data points.
+
+    Args:
+        data (DataFrame): Segment data containing 'vaf' values.
+        fb (float): Scaling factor for minimum spread.
+        min_data_points (int): Threshold for minimum number of data points.
+
+    Returns:
+        dict: Dictionary of estimated parameters.
+    """
+    vafs = data['vaf'].values
+    m = np.nanmean(data['cov']) if 'cov' in data else np.nan  # Mean coverage if available
+    ai = np.abs(vafs - 0.5)
+    l = len(data)  # Length of the segment (or another metric if needed)
+    
+    # Use robust statistics
+    median_ai = np.median(ai) if len(ai) > 0 else 0.5  # Default to 0.5 if no data
+
+    # Return fallback parameters
+    return {
+        'm': m,
+        'l': l,
+        'ai': median_ai,
+        'dai': 0.1,  # Fixed small error
+        'a': 0.5,  # Assume equal proportions if unknown
+        'da': 0.1,  # Fixed small error
+        'v0': median_ai,
+        'dv0': 0.05,  # Fixed small error
+        'success': True,
+        'n': len(data) / Consts.SNPS_IN_WINDOW if len(data) > 0 else 0,
+        'status': 'Fallback estimation',
+        'fraction_1': np.nan  # Not computable with very few points
+    }
+
 
 def vaf_cnai (v, dv, a, v0,b, cov):
 
