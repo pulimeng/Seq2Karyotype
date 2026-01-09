@@ -163,3 +163,4 @@ def dist (k, ai, s_ai, cn, s_cn, model):
     da = (ai - model.ai(k,2))/s_ai
     dc = (cn - model.m(k,2))/s_cn
     return np.sqrt(da**2+dc**2)
+    
