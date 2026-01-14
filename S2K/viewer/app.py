@@ -4,19 +4,17 @@ from .Plots import * #need a dot before Plots, like this: .Plots
 from S2K import Models
 from S2K import Consts
 from S2K import Scoring
-
-
 from S2K import Consts
-
 
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import scipy.signal as sig
-
+from scipy.signal import find_peaks, peak_prominences
 
 from collections import defaultdict
 from matplotlib.patches import Ellipse
+from matplotlib.path import Path
 from sklearn.neighbors import KernelDensity
 
 chromdic = {}
@@ -88,13 +86,18 @@ app_ui = ui.page_fluid(
                                        ui.input_slider ('size_thr', "Min non-centromere segment size (in Mb)",
                                                         value = 5, min = 0, max = 10),
                                        ui.h4 ("Display settings:"),
+                                       ui.input_slider ('model_conf_thr', "Model fitness threshold",
+                                                        value = 0.1, min = 0, max = 1, step = 0.05),
+                                       
+                                       ui.input_slider ('clone_prominent', "Subclone prominence threshold",
+                                                        value = 0.1, min = 0, max = 1, step = 0.05),
+                                       
                                        ui.output_text ("auto_model_thr"),
                                        ui.input_slider ('model_thr', "Model score threshold",
                                                         value = 3, min = 0, max = 10, step = 0.1),
 
                                        ui.output_text ("auto_HE_thr"),
-                                       ui.input_slider ('HE_thr', "Max HE score:",
-
+                                       ui.input_slider ('HE_thr', "Max HE score",
                                                         value = 2, min = 0, max = 10),
                                        
                                        width = 2),
@@ -303,16 +306,9 @@ def server(input, output, session):
         if not file_input:
             return
         
-        df = pd.read_csv (file_input[0]['datapath'], sep = '\t', header = None, 
-                    names = ['chrom', 'start', 'end', 'size', 'ai','n', 'm', 'cn',
-                            'd_HE', 'score_HE', 'model', 'd_model', 
-                            'AB', '(AB)(2+n)','(AB)(2-n)',
-                            'A','AA','AAB','AAAB','AAA','AAAA',
-                            'A+AA', 'AAB+AAAB', 'AA+AAA', 'AA+AAB','AAB+AABB', 'AAA+AAAA',                                                                                  
-                            'score_model', 'k',
-                            'cyto', 'cent'])
-        
+        df = pd.read_csv (file_input[0]['datapath'], sep = '\t')
         df['size'] = (df['end'] - df['start'])/1e6
+        print(df)
         
         data.set(pd.DataFrame())
         par.set({})
@@ -346,15 +342,11 @@ def server(input, output, session):
             
             report = b.loc[b['score_HE'] > input.HE_thr()].copy()
             report['model'] = [ m if score <= input.model_thr() else m+'*' for m,score in zip (report['model'].tolist(),
-                                                                                              report['score_model'].tolist())]
-            #report.loc[report['score_model'] > input.model_thr(), 'model'] = '--'
-            #report.loc[report['score_model'] > input.model_thr(), 'k'] = np.nan
+                                                                                              report['model_dipscore'].tolist())]
             
             #merging TBD
             
             bed_report.set(report)
-
-
     
     @reactive.Effect
     @reactive.event(input.par_file)
@@ -400,7 +392,7 @@ def server(input, output, session):
         if  len(bed_data):
             fig, axs = plt.subplots (2, 1, figsize = (16,6), sharex = True)
             meerkat_plot (bed_data, axs, chrom_sizes(), cn_max=bed_data['cn'].max(),
-                          model_thr = input.model_thr(), HE_thr = input.HE_thr())
+                          model_conf_thr = input.model_conf_thr())
 
             models = bed_data['model'].unique()
             for model in models:
@@ -423,6 +415,14 @@ def server(input, output, session):
                     annotate_loc = (start + row['start'], 5)
                     axs[1].plot(annotate_loc[0], annotate_loc[1], marker='+', markersize=8, ls='', color='red', label='')
         
+            low_conf = bed_data[(bed_data['model_fitness'] < input.model_conf_thr()) & (bed_data['model'] != 'AB')]
+            if len(low_conf) > 0:
+                axs[0].scatter((),(), marker='v', color='red', edgecolor='black', label='Low Fitness', s=8)
+                
+            complex_rows = bed_data.apply(lambda row: complex_evolution(row), axis=1) & ((1-bed_data['cent'])*bed_data['size'] >= 5e6) & (bed_data['cent'] < 0.2)
+            if any(complex_rows):
+                axs[0].scatter((),(), marker='s', facecolor='none', edgecolor='red', label='Complex', s=100)
+                
             axs[0].legend (bbox_to_anchor = (0., 1.02, 1., 1.02),
                             ncol = int(len(model_presets())/2) + 1,
                             loc = 'lower left', mode = 'expand', fontsize = 8,
@@ -444,22 +444,34 @@ def server(input, output, session):
                 s = tmp['size'].values[order]
                 c = [colorsCN[m] for m in tmp['model'].values[order]]
                         
-                #how bandwidth?
-                #median distance to the model? or similar
                 kde = KernelDensity (kernel = 'gaussian', bandwidth = 0.018).fit (k)
                 xt = np.linspace (min(-0.01, k[0,0]), k[-1,0]*1.1, 1000)[:, np.newaxis]
                 ax.scatter (k, np.linspace (0,1, len(k)), s = np.sqrt(s)*10, c = c)
                 ax.plot (k, np.linspace (0,1, len(k)), 'k:')
                 axt = ax.twinx()
-                axt.plot (xt, np.exp(kde.score_samples(xt)))
+                
+                # Find peaks and their prominences
+                density_estimation = np.exp(kde.score_samples(xt))
+                axt.plot (xt, density_estimation)
+                density_estimation /= density_estimation.max()  # Normalize KDE to have maximum y-value of 1
+                peaks, _ = find_peaks(density_estimation, prominence=input.clone_prominent())  # Adjust prominence as needed
+                peak_values = density_estimation[peaks]
+                peak_positions = xt[peaks].flatten()
+                
+                # Exclude peak at 0
+                if len(peak_positions)>0:
+                    non_zero_peaks = peak_positions > 0
+                else:
+                    non_zero_peaks = peak_positions
+                
+                # Plot prominent peaks
+                ax.plot(peak_positions[non_zero_peaks], peak_values[non_zero_peaks], 'r*', markersize=8)  # Adjust marker size and style as needed
             
                 ax.set_xlabel ('clonality')
                 ax.set_ylabel ('clonaticty cdf')
                 axt.set_ylabel ('clonaticty kde')
             
                 return fig
-    
-    
         
     @output
     @render.plot (alt = "Genomewide view")
@@ -755,7 +767,7 @@ def server(input, output, session):
             for m in input.report_models():
                 omit_models.remove (m)
             return report.loc[[m not in omit_models for m in report.model.tolist()]][['chrom', 'start', 'end', 'cn',
-                                                                                      'model', 'score_model', 'k', 'cyto']]
+                                                                                      'model', 'model_dipscore', 'k', 'cyto']]
         
     @output
     @render.table
@@ -811,10 +823,9 @@ def server(input, output, session):
         par_d = par()
         data_df = data()
         if (len(bed_data) != 0) & (len(par_d.keys()) != 0) & (len(data_df) != 0):
-            fig, axs = plt.subplots (4, 1, figsize = (12,4), sharex = True)
-            earth_worm_plot (data_df, bed_data, par_d, input.chrom_view(), axs, 
-                             max_score_HE = input.HE_thr(), model_thr = input.model_thr())
-
+            fig, axs = plt.subplots(5, 1, figsize=(12,4), sharex=True, gridspec_kw={'height_ratios': [2, 2, 2, 2, 1]})
+            earth_worm_plot(data_df, bed_data, par_d, input.chrom_view(), axs)
+            fig.tight_layout()
             return fig
         
     @output

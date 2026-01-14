@@ -5,7 +5,8 @@ import scipy.stats as sts
 import pandas as pd
 import numpy as np
 import argparse as agp
-
+import matplotlib.cm as cm
+import matplotlib.patches as patches
 
 from S2K import Testing
 from S2K import Consts
@@ -23,12 +24,27 @@ colorsCN['AAA'] = 'brown'
 colorsCN['AAAA'] = 'darkolivegreen'
 colorsCN['A+AA'] = 'orchid'
 colorsCN['AA+AAA'] = 'pink'
+colorsCN['AA+AAAA'] = 'gold'
 colorsCN['AA+AAB'] = 'teal'
 colorsCN['AAB+AAAB'] = 'turquoise'
 colorsCN['AAB+AABB'] = 'green'
 colorsCN['UN'] = 'skyblue'
-    
-def meerkat_plot (bed_df, axs, chrom_sizes, cn_max, model_thr = 3, HE_thr = 3):
+
+def complex_evolution(row):
+    if row['model'] == 'A' and row['chrom'] != 'chrY' and row['chrom'] != 'chrX':
+        clonality = row['k']
+        tmpcn = clonality * 1 + (1 - clonality) * 2
+        tmpai = clonality / (4 - 2 * clonality)
+        deltacn = abs(tmpcn - row['cn'])/row['cn']
+        deltaai = abs(tmpai - row['ai'])/row['ai']
+        if deltacn > 0.2 or deltaai > 0.1:
+            return True
+        else:
+            return False
+    else:
+        return False
+
+def meerkat_plot (bed_df, axs, chrom_sizes, cn_max, model_conf_thr=0.1):
     chrs = chrom_sizes.index.values.tolist()
 
     chrs.sort (key = Consts.CHROM_ORDER.index)
@@ -38,8 +54,8 @@ def meerkat_plot (bed_df, axs, chrom_sizes, cn_max, model_thr = 3, HE_thr = 3):
     mids = []
     
     for chrom in chrs:
-        
-        for _, b in bed_df.loc[bed_df['chrom'] == chrom].iterrows():
+        bed_chr = bed_df.loc[bed_df['chrom'] == chrom]
+        for _, b in bed_chr.iterrows():
             if b['cn'] < 0.6:
                 color = 'purple'
             elif b['cn'] > 0.6 and b['cn'] <= 4.5:
@@ -51,7 +67,7 @@ def meerkat_plot (bed_df, axs, chrom_sizes, cn_max, model_thr = 3, HE_thr = 3):
             
             alpha = 1
             
-            if b['model'] in ['AA+AAB', 'AAB+AAAB', 'AAB+AABB', 'A+AA', 'AA+AAA']:
+            if b['model'] in ['AA+AAB', 'AAB+AAAB', 'AAB+AABB', 'A+AA', 'AA+AAA', 'AA+AAAA', 'AAA+AAAA']:
                 ms = b['model'].split('+')
                 if b['model'] == 'AAB+AABB':
                     ms = ['AAB', '(AB)(2+n)']
@@ -64,13 +80,26 @@ def meerkat_plot (bed_df, axs, chrom_sizes, cn_max, model_thr = 3, HE_thr = 3):
                                      (b['k'], b['k']), color = color, alpha = alpha)
             axs[1].fill_between (x = (start + b['start'], start + b['end']),
                                  y1 = (b['cn'], b['cn']), y2 = (2, 2), color = color, alpha = alpha)
-                
+            if b['model_fitness'] < model_conf_thr and b['model'] != 'AB':
+                axs[0].scatter((start + (b['start'] + b['end']) / 2), b['k'] + 0.05, marker='v', color='red', edgecolor='black', s=15)
+        
+        complex_rows = bed_chr[bed_chr.apply(lambda row: complex_evolution(row), axis=1) & ((1-bed_chr['cent'])*bed_chr['size'] >= 1e6)]
+        if len(complex_rows) > 0:
+            for _, b in complex_rows.iterrows():
+                bar_center = start + (b['start'] + b['end']) / 2
+                bar_height = b['k']  
+                bar_width = b['end'] - b['start']
+                rect = patches.Rectangle((bar_center - bar_width / 2, 0), bar_width, bar_height, linewidth=1, edgecolor='red', facecolor='none')
+                patch = axs[0].add_patch(rect)
+                patch.set_zorder(20)  # Set the z-order here
+
         end = chrom_sizes[chrom]
         mids.append (start + end / 2)
         start += end
         axs[1].plot ((start, start), (0.0, 5.0), 'k:', lw = 0.5)
         axs[0].plot ((start, start), (0.0, 1.0), 'k:', lw = 0.5)        
-    
+        
+
     axs[-1].set_xticks (mids)
     axs[-1].set_xticklabels (chrs, rotation = 60)
         
@@ -202,9 +231,7 @@ def plot_cdf (all_values, ax,  all_colors, par = (1,1), n = 100, xscale = 'lin',
         raise ('Unknown scale')
         
 
-
-def earth_worm_plot (data_df, bed_df, params, chrom, axs, markersize = 2,
-                     max_score_HE = 10, model_thr = 1):
+def earth_worm_plot (data_df, bed_df, params, chrom, axs, markersize = 2):
 
     chromdata = data_df.loc[data_df.chrom == chrom]
 
@@ -237,36 +264,9 @@ def earth_worm_plot (data_df, bed_df, params, chrom, axs, markersize = 2,
         axs[1].set_ylim (chromdata['cov'].min(), 5*params['m0'])
     
     axs[0].set_ylabel ('BAF')
-    axs[1].set_ylabel ('coverage')
+    axs[1].set_ylabel ('cov.')
     
     chrombed = bed_df.loc[(bed_df.chrom == chrom)]
-    for _, seg in chrombed.loc[(chrombed['cent'] < 0.5) & (chrombed['size'] >= 0.95)].iterrows():       
-        plot_cn = seg.cn if seg.cn < 5 else 5
-        linestyle = '-' if seg['size'] > 5 else ':'
-        
-        if seg['cn'] > 0.6 and seg['cn'] <= 4.5:
-            axs[2].plot((seg.start, seg.end), (seg.k, seg.k), c=colorsCN[seg.model], lw=1, ls=linestyle, marker='o', markersize=3)
-            axs[3].plot((seg.start, seg.end), (plot_cn, plot_cn), c=colorsCN[seg.model], lw=1, ls=linestyle)
-        elif seg['cn'] < 0.6:
-            axs[2].plot ((seg.start, seg.end), (seg.k, seg.k), c='purple', lw=1, marker='o', ls=linestyle, markersize=3)
-            axs[3].plot ((seg.start, seg.end), (seg.cn, seg.cn), c='purple', ls=linestyle, lw=1)
-            text_x = (seg.start + seg.end) / 2  # Middle of the segment
-            text_y = plot_cn + 0.2  # Offset to position text above the line
-            axs[3].text(text_x, text_y, str(round(seg.cn,1)), color='purple', ha='center', fontsize=6)
-            axs[3].text(text_x, text_y, 'Del²', color='purple', ha='center', fontsize=6)
-        elif seg['cn'] <= 10 and seg['cn'] > 4.5:
-            axs[2].plot ((seg.start, seg.end), (seg.k, seg.k), c=colorsCN[seg.model], lw=1, ls=linestyle, marker='o', markersize=3)
-            axs[3].plot ((seg.start, seg.end), (5, 5), c='yellow', lw=1, ls=linestyle)
-            axs[2].plot ((seg.start, seg.end), (seg.k, seg.k), c='yellow', lw = 5, alpha = .6)
-            text_x = (seg.start + seg.end) / 2  # Middle of the segment
-            text_y = 5 - 0.7  # Offset to position text above the line
-            axs[3].text(text_x, text_y, str(round(seg.cn)), color='black', ha='center', fontsize=6)
-        else:
-            axs[2].plot ((seg.start, seg.end), (seg.k, seg.k), c='red', lw=1, ls=linestyle, marker='o', markersize=3)
-            axs[3].plot ((seg.start, seg.end), (5, 5), c='red', lw=1, ls=linestyle)
-            text_x = (seg.start + seg.end) / 2  # Middle of the segment
-            text_y = 5 + 0.2  # Offset to position text above the line
-            axs[3].text(text_x, text_y, str(round(seg.cn)), color='red', ha='center', fontsize=6)
     
     if len(chrombed) > 0:
         default_ylim = (1, 3)
@@ -282,11 +282,58 @@ def earth_worm_plot (data_df, bed_df, params, chrom, axs, markersize = 2,
         
         axs[3].set_ylim((lower_limit, upper_limit))
             
+    for _, seg in chrombed.loc[(chrombed.cent < 0.5) & (chrombed['size'] >= 0.95)].iterrows():
+        plot_cn = seg.cn if seg.cn < 5 else 5
+        linestyle = '-' if seg['size'] > 5 else ':'
+        
+        if seg['cn'] > 0.6 and seg['cn'] <= 4.5:
+            axs[2].plot((seg.start, seg.end), (seg.k, seg.k), c=colorsCN[seg.model], lw=1, ls=linestyle, marker='o', markersize=3)
+            axs[3].plot((seg.start, seg.end), (plot_cn, plot_cn), c=colorsCN[seg.model], lw=1, ls=linestyle)
+        elif seg['cn'] < 0.6:
+            axs[2].plot ((seg.start, seg.end), (seg.k, seg.k), c='purple', lw=1, marker='o', ls=linestyle, markersize=3)
+            axs[3].plot ((seg.start, seg.end), (seg.cn, seg.cn), c='purple', ls=linestyle, lw=1)
+            text_x = (seg.start + seg.end) / 2  # Middle of the segment
+            text_y = plot_cn + 0.2  # Offset to position text above the line
+            axs[3].text(text_x, text_y, str(round(seg.cn,1)), color='purple', ha='center', fontsize=6)
+            # axs[3].text(text_x, text_y, 'Del²', color='purple', ha='center', fontsize=6)
+        elif seg['cn'] <= 10 and seg['cn'] > 4.5:
+            axs[2].plot ((seg.start, seg.end), (seg.k, seg.k), c=colorsCN[seg.model], lw=1, ls=linestyle, marker='o', markersize=3)
+            axs[3].plot ((seg.start, seg.end), (5, 5), c='yellow', lw=1, ls=linestyle)
+            axs[2].plot ((seg.start, seg.end), (seg.k, seg.k), c='yellow', lw = 5, alpha = .6)
+            text_x = (seg.start + seg.end) / 2  # Middle of the segment
+            text_y = 5 - 0.7  # Offset to position text above the line
+            axs[3].text(text_x, text_y, str(round(seg.cn)), color='black', ha='center', fontsize=6)
+        else:
+            axs[2].plot ((seg.start, seg.end), (seg.k, seg.k), c='red', lw=1, ls=linestyle, marker='o', markersize=3)
+            axs[3].plot ((seg.start, seg.end), (5, 5), c='red', lw=1, ls=linestyle)
+            text_x = (seg.start + seg.end) / 2  # Middle of the segment
+            text_y = 5 + 0.2  # Offset to position text above the line
+            axs[3].text(text_x, text_y, str(round(seg.cn)), color='red', ha='center', fontsize=6)
+        
+        if seg['model'] != 'AB':
+            bar_position = (seg.start + seg.end) / 2  # Position at the center of the segment
+            confidence_level = seg.model_fitness  # Confidence level for the segment
+            cmap = cm.gray_r  # Grayscale colormap (reversed)
+            color = cmap(confidence_level)
+            bar_width = seg.end - seg.start  # Width of the bar equals the size of the segment
+            axs[4].bar(bar_position, 1, color=color, width=bar_width, linewidth=0)
+        
+        if complex_evolution(seg):
+            bar_width = seg['end'] - seg['start']
+            rect1 = patches.Rectangle((seg['start'], seg['k'] - 0.1), bar_width, 0.2, linewidth=1, edgecolor='red', facecolor='none')
+            patch1 = axs[2].add_patch(rect1)
+            rect2 = patches.Rectangle((seg['start'], seg['cn'] - upper_limit/10), bar_width, upper_limit/5, linewidth=1, edgecolor='red', facecolor='none')
+            patch2 = axs[3].add_patch(rect2)
+            patch1.set_zorder(20)  # Set the z-order here
+            patch2.set_zorder(20)  # Set the z-order here
+
     axs[2].set_ylim ((-0.05,  1.05))
     axs[3].plot ((0, chromdata.position.max()), (2, 2), 'k--', lw=1)
+    axs[4].set_ylim ((0.0,  1.0))
 
     axs[2].set_ylabel ('clonality')
     axs[3].set_ylabel ('cn')
+    axs[4].set_ylabel('fitness')
 
 def check_solution_plot_opt (bed, ax, model_thr,
                              highlight = [], xcol = 'cn'):
@@ -294,7 +341,7 @@ def check_solution_plot_opt (bed, ax, model_thr,
     
     for _, b in bed.loc[bed['model'].notna(),:].iterrows():
 
-        ec = 'w' if b['score_model'] < model_thr else 'orange'
+        ec = 'w' if b['model_dipscore'] < model_thr else 'orange'
         if b['chrom'] == 'chrX':
             ax.scatter (b[xcol],b['ai'], c = colorsCN[b['model']], s = b['size']*2,
                         edgecolor = ec, marker = 'X')
