@@ -13,6 +13,8 @@ from S2K import Consts
 from S2K import Report
 
 Run_treshold =  namedtuple('Run_treshold', [Consts.N_SYMBOL, Consts.E_SYMBOL])
+
+
 class Chromosome:
     """Class to contain data, and find runs."""
     def __init__ (self, name, data, config, logger, genome_medians, CB, models):

@@ -15,9 +15,18 @@ class Report:
         """ Generates a report for Genome objects """
         if self._report_type == 'bed':
             keys = list(genome.chromosomes.keys())
-
+            
             keys.sort (key = Consts.CHROM_ORDER.index)
-            report = '\n'.join([genome.chromosomes[key].report(report_type=self._report_type) for key in keys])
+            
+            # Create the header string
+            col_names = ['chrom', 'start', 'end', 'size', 'ai', 'n', 'm', 'cn',
+                        'd_HE', 'score_HE', 'model', 'd_model', 
+                        'AB'] + genome.models + ['model_fitness', 'model_dipscore', 'k',
+                        'cyto', 'cent']
+            header = '\t'.join(col_names)
+            body = '\n'.join([genome.chromosomes[key].report(report_type=self._report_type) for key in keys])
+            report = f"{header}\n{body}"
+            
         elif self._report_type == 'params':
             report_list = ['m0\t'+ str(genome.genome_medians['m0']),
                            'l\t'+ str(genome.genome_medians['l']),
@@ -45,53 +54,30 @@ class Report:
         return data
 
     def segment_report (self, segment):
-
         """ Generates a report for Segment objects """
         if self._report_type == 'bed':    
-            report = '\t'.join([str(p) for p in [segment.chrom, 
-                                                 segment.start,
-                                                 segment.end,
-                                                 segment.end - segment.start,
-                                                 segment.parameters['ai'], 
-                                                 segment.parameters['n'],
-                                                 segment.parameters['m'],
+            
+            attr_list = [segment.chrom, 
+                         segment.start,
+                         segment.end,
+                         segment.end - segment.start,
+                         segment.parameters['ai'], 
+                         segment.parameters['n'],
+                         segment.parameters['m'],
+                         2*segment.parameters['m']/segment.genome_medians['m0'],
+                         segment.parameters['d_HE'], 
+                         segment.parameters['score_HE'], 
+                         segment.parameters['model'],
+                         segment.parameters['d_model'],
+                         segment.parameters['AB']] + \
+                        [segment.parameters[x] for x in segment.models] + \
+                        [segment.parameters['model_confidence'],
+                        segment.parameters['score_model'], 
+                        segment.parameters['k'], 
+                        segment.cytobands,
+                        segment.centromere_fraction]
 
-                                                 2*segment.parameters['m']/segment.genome_medians['m0'],
-                                                 segment.parameters['d_HE'], 
-                                                 segment.parameters['score_HE'], 
-                                                 segment.parameters['model'],
-                                                 segment.parameters['d_model'],
-                                                 segment.parameters['AB'],
-                                                 segment.parameters['(AB)(2+n)'],
-                                                 segment.parameters['(AB)(2-n)'],
-                                                 segment.parameters['A'],
-                                                 segment.parameters['AA'],
-                                                 segment.parameters['AAB'],
-                                                 segment.parameters['AAAB'],
-                                                 segment.parameters['AAA'],
-                                                 segment.parameters['AAAA'],
-                                                 segment.parameters['A+AA'],
-                                                 segment.parameters['AAB+AAAB'],
-                                                 segment.parameters['AA+AAA'],
-                                                 segment.parameters['AA+AAB'],
-                                                 segment.parameters['AAB+AABB'],
-                                                 segment.parameters['AAA+AAAA'],
-                                                 segment.parameters['score_model'],
-                                                 segment.parameters['k'], 
-                                                 segment.cytobands,
-                                                 segment.centromere_fraction]])
-                                                 #segment.parameters['call'], segment.parameters['call_FDR']]])
+            report = '\t'.join([str(p) for p in attr_list])
         else:
             report = ''
         return report
-
-    def run_report(self, run):
-        """ Generates a report for Run objects """
-        fields = ['chi2', 'chi2_noO', 'positions', 'p_norm', 'merged_segments']
-        lines = ['Run: ' + run.name]
-        for solution in run.solutions:
-            lines.append (str("\t")+'Solution')
-            soldic = solution._asdict()
-            for f in fields:
-                lines.append (str("\t\t") + f + ': '+ str(soldic[f]))
-        return '\n'.join(lines)

@@ -6,15 +6,14 @@ import subprocess
 import sys
 
 import pandas as pd
-from S2K.Run import Solution
 
 from S2K import WGS
 from S2K import Models
 
-_description = "Scan chromosomes in search for non-HE segments. Assigns copy numbers and karytotypes if can."
+_description = "Single sample WGS based copy number analysis tool for clone evolution and intratumor heterogeneity"
 
 
-__version__ = '0.1.0'
+__version__ = '0.9.5'
 
 
 
@@ -50,9 +49,9 @@ def main():
                                  , default = 6.0)
     parser_analyze.add_argument ('-v', '--version', help = 'Print version', action = 'version',
                                  version = 'S2K v. {version}'.format(version = __version__))
-    parser_analyze.add_argument ('-m', '--models', choices=Models.model_presets.keys(),
-                                 nargs='+', help = 'Specify which of models should be included.',
-                                 default = ['(AB)(2+n)','(AB)(2-n)','A','AA','AAB','AAAB','AAA','AAAA','A+AA','AAB+AAAB','AA+AAA','AA+AAB','AAB+AABB','AAA+AAAA'])
+    parser_analyze.add_argument ('-m', '--models',
+                                 nargs='+', help = 'Models to be excluded.',
+                                 default = [])
 
     parser_analyze.add_argument ('-sf', '--skip_filtering', help = 'Do not filter input data through SG list.',
                                   action = 'store_true')
@@ -70,7 +69,7 @@ def main():
     get_config = subparsers.add_parser ("getconfig", description="copies default S2K config to current dir")
     get_config.add_argument ("-d", "--directory", default=os.getcwd(),
                              help="copies config to this dir. Default is current working directory.")
-    get_config.set_defaults (func=get_s2k_config)
+    get_config.set_defaults (func=get_S2K_config)
 
     args = parser.parse_args()
     args.func(args)
@@ -81,8 +80,10 @@ def analyze(args):
     ini.read (args.config)
     output_filename = args.sample_name + '_m{}_mc{:.0f}'.format(args.coverage_diploid, args.merge_coeff)
     
+    models = sorted([x for x in Models.model_presets.keys() if x not in args.models])
+    
     sample = WGS.WGS (args.input_file,  sample_name = args.sample_name, parameters = ini,
-                      no_processes = args.no_processes, models = args.models,
+                      no_processes = args.no_processes, models = models,
                       output_filename = output_filename,
                       verbosity = args.level, skip_filtering = args.skip_filtering)
 
@@ -127,7 +128,7 @@ def viewer(args):
 
     proc = subprocess.run(cmd, stdout=sys.stdout, stderr=sys.stderr)    
 
-def get_s2k_config(args):
+def get_S2K_config(args):
     """ local helper to copy config to current working directory """
     configdir = os.path.dirname (os.path.realpath(__file__))
     shutil.copyfile (f'{configdir}/S2K.ini', f'{args.directory}/S2K.ini')

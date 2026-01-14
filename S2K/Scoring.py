@@ -2,6 +2,7 @@ import numpy as np
 import scipy.stats as sts
 import scipy.optimize as opt
 import sklearn.linear_model as slm
+from scipy.stats import median_abs_deviation
 
 from S2K import Consts
 from S2K import Models
@@ -22,7 +23,7 @@ class Scoring:
                     
         try:
             self.median_size = np.median(initial_data[:, 2])
-            scales = np.sqrt(initial_data[:,2])            
+            scales = np.sqrt(initial_data[:,2])
             self.ai_param = fit_QQgauss(initial_data[: ,0]*scales, fit_intercept = False)
             self.cn_param = fit_QQgauss(initial_data[: ,1]*scales, fit_intercept = False)
             
@@ -62,8 +63,8 @@ class Scoring:
             self.logger.info (f"Distribution of diploid copy number: m = {self.cn_param['m']}, s = {self.cn_param['s']}")
         
         except (IndexError):
-            self.ai_param = {'m' : 0, 's' : 0}
-            self.cn_param = {'m' : 0, 's' : 0}
+            self.ai_param = {'m' : 1e-6, 's' : 1e-6}
+            self.cn_param = {'m' : 1e-6, 's' : 1e-6}
             self.dipl_dist = {'m' : np.nan, 's' : 0, 'thr' : 0, 'alpha': np.nan}
             self.median_size = 1
             self.logger.info ("Scorer created with no diploid reference.")
@@ -107,14 +108,9 @@ class Scoring:
         
         ai = segment.parameters['ai']
         try:
-            # if segment.chrom == 'chrY':
-            #     base_parameters = {'model' : 'A', 'd_model' : 0.0, 'k': cn, 'p_model' : np.nan, 'AB':np.nan}
-            #     for model in models:
-            #         base_parameters[model] = np.nan
-            #     segment.parameters.update (base_parameters)
-            # else:
             segment.parameters.update (Models.pick_model(ai,s_ai,cn,s_cn,models))
         except (IndexError, AssertionError):
+            self.logger.info(f"Problematic segment encountered: {segment}")
             base_parameters = {'model' : 'UN', 'd_model' : np.nan, 'k': np.nan, 'p_model' : np.nan, 'AB':np.nan}
             for model in models:
                 base_parameters[model] = np.nan
@@ -128,7 +124,7 @@ def fit_QQgauss (values, fit_intercept = True):
     huber = slm.HuberRegressor (fit_intercept = fit_intercept)
     huber.fit (x[:, np.newaxis], np.sort(values))
     return {'m' : huber.intercept_, 's' : huber.coef_[0]}
-    
+
 def fit_smallest_gauss (values):
     current_values = np.sort(values)
     thr = current_values.max()+1

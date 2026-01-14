@@ -12,7 +12,6 @@ from S2K import Distribution
 from S2K import Testing
 from S2K import Chromosome
 from S2K import Consts
-from S2K.Report import Report
 
 Solution = namedtuple ('Solution', ['chi2', 'chi2_noO', 'positions', 'p_norm', 'segments', 'merged_segments'])
 
@@ -313,9 +312,6 @@ class Run:
 
     def tostring (self):
         return self.name + '-' + self.symbol
-    
-    def report (self, report_type = 'short'):
-        return Report(report_type).run_report(self)
     
     def __repr__(self) -> str:
         return self.tostring()
